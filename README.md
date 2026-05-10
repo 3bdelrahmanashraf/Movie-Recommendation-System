@@ -1,4 +1,4 @@
-# 🎬 Movie Recommender AI
+# 🎬 Movie Recommender
 
 A high-performance, content-based movie recommendation engine built with **Python**, **FastAPI**, and **Scikit-learn**. This system analyzes metadata from 5,000+ movies to find mathematical similarities and suggest your next favorite film.
 
