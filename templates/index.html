@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Recommender | AI Content-Based Filtering</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <header>
+        <div class="logo-icon">
+            <i data-lucide="clapperboard"></i>
+        </div>
+        <div class="header-text">
+            <h1>Movie Recommender</h1>
+            <p>Find your next favorite film</p>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h2>Discover Similar Movies</h2>
+            <p>Enter a movie you love and we'll find similar titles you might enjoy from our extensive collection.</p>
+        </section>
+
+        <section class="search-section">
+            <div class="search-container">
+                <div class="search-input-wrapper">
+                    <i data-lucide="search" class="search-icon"></i>
+                    <input type="text" id="movie-input" placeholder="Enter a movie title (e.g., Inception, The Matrix)..." autocomplete="off">
+                </div>
+                <button class="btn-search" id="search-btn">
+                    <i data-lucide="sparkles" style="width: 16px; height: 16px;"></i>
+                    Find Similar
+                </button>
+                <button class="btn-secondary" id="show-all-btn">
+                    <i data-lucide="layout-grid" style="width: 16px; height: 16px;"></i>
+                    Show All
+                </button>
+            </div>
+
+            <div class="suggestions-chips">
+                <span class="try-text">Try:</span>
+                <span class="chip" onclick="searchMovie('Inception')">Inception</span>
+                <span class="chip" onclick="searchMovie('The Dark Knight')">The Dark Knight</span>
+                <span class="chip" onclick="searchMovie('Pulp Fiction')">Pulp Fiction</span>
+                <span class="chip" onclick="searchMovie('The Matrix')">The Matrix</span>
+                <span class="chip" onclick="searchMovie('Forrest Gump')">Forrest Gump</span>
+            </div>
+        </section>
+
+        <section id="results-section" style="display: none;">
+            <div class="results-header-wrapper">
+                <div class="results-title-group">
+                    <h3 class="results-header" id="results-title">Recommendations</h3>
+                    <div id="movie-stats" class="movie-stats" style="display: none;">
+                        Total: <span id="total-count">0</span> movies
+                    </div>
+                </div>
+                <div class="collection-search-container" id="collection-search-container" style="display: none;">
+                    <div class="collection-search-bar">
+                        <i data-lucide="search" style="width: 16px; height: 16px; color: var(--text-muted);"></i>
+                        <input type="text" id="collection-search-input" placeholder="Search collection..." autocomplete="off">
+                        <button class="btn-icon" id="close-collection-search" title="Close search">
+                            <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="collection-actions" id="collection-actions" style="display: none;">
+                    <button class="btn-icon" id="open-collection-search" title="Search in collection">
+                        <i data-lucide="search" style="width: 20px; height: 20px;"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="movie-list" id="movie-list">
+                <!-- Cards will be injected here -->
+            </div>
+            <div id="load-more-container" style="display: none; text-align: center; margin-top: 3rem;">
+                <button class="btn-secondary" id="load-more-btn" style="padding: 0.75rem 3rem;">
+                    <i data-lucide="chevron-down"></i>
+                    Load More
+                </button>
+            </div>
+        </section>
+
+        <div id="loader" style="display: none; text-align: center; margin-top: 2rem;">
+            <p id="loader-text" style="color: var(--text-muted);">Finding the perfect matches...</p>
+        </div>
+
+        <div id="error-msg" style="display: none; text-align: center; margin-top: 2rem; color: #ef4444;">
+            <p id="error-text">Could not find that movie. Please check the spelling or try another title.</p>
+        </div>
+    </main>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        const input = document.getElementById('movie-input');
+        const searchBtn = document.getElementById('search-btn');
+        const resultsSection = document.getElementById('results-section');
+        const resultsTitle = document.getElementById('results-title');
+        const movieList = document.getElementById('movie-list');
+        const loader = document.getElementById('loader');
+        const errorMsg = document.getElementById('error-msg');
+
+        let currentOffset = 0;
+        const limit = 20;
+        let isAllMode = false;
+
+        async function searchMovie(title) {
+            const movieTitle = title || input.value;
+            if (!movieTitle) return;
+
+            input.value = movieTitle;
+            isAllMode = false;
+            currentOffset = 0;
+            
+            // UI State Reset
+            errorMsg.style.display = 'none';
+            resultsSection.style.display = 'none';
+            loader.style.display = 'block';
+            document.getElementById('loader-text').textContent = "Finding the perfect matches...";
+            document.getElementById('load-more-container').style.display = 'none';
+            document.getElementById('movie-stats').style.display = 'none';
+
+            try {
+                const response = await fetch('/recommend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ movie_title: movieTitle })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayResults({ ...data, mode: 'recommend' });
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                console.error(err);
+                loader.style.display = 'none';
+                errorMsg.style.display = 'block';
+            }
+        }
+
+        async function fetchAllMovies(append = false) {
+            if (!append) {
+                currentOffset = 0;
+                isAllMode = true;
+                movieList.innerHTML = '';
+                resultsSection.style.display = 'none';
+                loader.style.display = 'block';
+                document.getElementById('loader-text').textContent = "Fetching movie library...";
+                document.getElementById('load-more-container').style.display = 'none';
+            } else {
+                document.getElementById('load-more-btn').disabled = true;
+                document.getElementById('load-more-btn').textContent = "Loading...";
+            }
+
+            errorMsg.style.display = 'none';
+
+            try {
+                const response = await fetch(`/movies?limit=${limit}&offset=${currentOffset}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentOffset += limit;
+                    displayResults({ recommendations: data.movies, total: data.total, mode: 'all', append });
+                    
+                    if (currentOffset < data.total) {
+                        document.getElementById('load-more-container').style.display = 'block';
+                        document.getElementById('load-more-btn').disabled = false;
+                        document.getElementById('load-more-btn').innerHTML = `<i data-lucide="chevron-down"></i> Load More`;
+                        lucide.createIcons();
+                    } else {
+                        document.getElementById('load-more-container').style.display = 'none';
+                    }
+                } else {
+                    throw new Error("Failed to fetch movies");
+                }
+            } catch (err) {
+                console.error(err);
+                loader.style.display = 'none';
+                errorMsg.style.display = 'block';
+                document.getElementById('error-text').textContent = "Could not load the movie list.";
+            }
+        }
+
+        function displayResults(data) {
+            loader.style.display = 'none';
+            resultsSection.style.display = 'block';
+            
+            if (data.mode === 'all' || data.mode === 'collection_search') {
+                resultsTitle.innerHTML = `<i data-lucide="library" style="display:inline-block; vertical-align:middle; margin-right:8px;"></i> ${data.mode === 'all' ? 'Movie Collection' : 'Search Results'}`;
+                movieList.classList.add('grid-layout');
+                document.getElementById('movie-stats').style.display = 'block';
+                document.getElementById('total-count').textContent = data.total;
+                document.getElementById('collection-actions').style.display = 'block';
+            } else {
+                resultsTitle.innerHTML = `Top 10 Recommendations`;
+                const matched = data.matched_movie || data.original_movie;
+                const matchNote = data.matched_movie && data.matched_movie.toLowerCase() !== data.original_movie.toLowerCase() 
+                    ? `<span style="font-size: 0.9rem; font-weight: 400; color: var(--text-muted); display: block;">Found for: <b>${data.matched_movie}</b></span>` 
+                    : `<span style="font-size: 0.9rem; font-weight: 400; color: var(--text-muted); display: block;">Found matches for: <b>${matched}</b></span>`;
+                resultsTitle.innerHTML += matchNote;
+                movieList.classList.remove('grid-layout');
+                document.getElementById('movie-stats').style.display = 'none';
+                document.getElementById('load-more-container').style.display = 'none';
+                document.getElementById('collection-actions').style.display = 'none';
+                document.getElementById('collection-search-container').style.display = 'none';
+                movieList.innerHTML = '';
+            }
+
+            const recommendations = data.recommendations || [];
+
+            recommendations.forEach((movie, index) => {
+                const card = document.createElement('div');
+                card.className = 'movie-card animate-fade-in';
+                card.style.animationDelay = `${index * 0.05}s`;
+
+                const posterUrl = movie.poster_url || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&q=80&w=300&h=450';
+                
+                const matchBadge = movie.match 
+                    ? `<div class="match-pill"><i data-lucide="trending-up" style="width: 14px; height: 14px;"></i> ${movie.match}% match</div>`
+                    : '';
+
+                if (data.mode === 'all' || data.mode === 'collection_search') {
+                    card.classList.add('compact');
+                    card.innerHTML = `
+                        <div class="poster-container">
+                            <img src="${posterUrl}" class="poster-img" alt="${movie.title}" onerror="this.src='https://via.placeholder.com/180x260?text=No+Poster'">
+                        </div>
+                        <div class="movie-info">
+                            <h4 class="movie-title">${movie.title}</h4>
+                            <p class="movie-genres">${movie.genres}</p>
+                        </div>
+                    `;
+                } else {
+                    card.innerHTML = `
+                        <div class="poster-container">
+                            <span class="rank-badge">#${index + 1}</span>
+                            <img src="${posterUrl}" class="poster-img" alt="${movie.title}" onerror="this.src='https://via.placeholder.com/180x260?text=No+Poster'">
+                        </div>
+                        <div class="movie-info">
+                            <div class="movie-info-header">
+                                <h4 class="movie-title">
+                                    <i data-lucide="film" style="width: 16px; height: 16px; color: var(--text-muted);"></i>
+                                    ${movie.title}
+                                </h4>
+                                ${matchBadge}
+                            </div>
+                            <p class="movie-genres">${movie.genres}</p>
+                            <p class="movie-overview">${movie.overview}</p>
+                        </div>
+                    `;
+                }
+                movieList.appendChild(card);
+            });
+            
+            lucide.createIcons();
+            if (!data.append) resultsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Helper for demonstration posters (mapping specific movies to beautiful Unsplash images)
+        function getDemoPoster(title) {
+            const map = {
+                'Interstellar': 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?auto=format&fit=crop&q=80&w=400',
+                'The Martian': 'https://images.unsplash.com/photo-1614728894747-a83421e2b9c9?auto=format&fit=crop&q=80&w=400',
+                'Arrival': 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=400',
+                'Gravity': 'https://images.unsplash.com/photo-1454789548928-9efd52dc4031?auto=format&fit=crop&q=80&w=400',
+                'Contact': 'https://images.unsplash.com/photo-1444703686981-a3abb99d2fe3?auto=format&fit=crop&q=80&w=400',
+                'Inception': 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&q=80&w=400',
+                'The Matrix': 'https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?auto=format&fit=crop&q=80&w=400'
+            };
+            return map[title] || `https://images.unsplash.com/photo-1542204172-3c1f81706f86?auto=format&fit=crop&q=80&w=400`;
+        }
+
+        async function performCollectionSearch(query) {
+            if (!query) {
+                fetchAllMovies(false);
+                return;
+            }
+
+            // UI State Reset
+            movieList.innerHTML = '';
+            loader.style.display = 'block';
+            document.getElementById('loader-text').textContent = "Searching library...";
+            document.getElementById('load-more-container').style.display = 'none';
+
+            try {
+                const response = await fetch(`/search_collection?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayResults({ recommendations: data.movies, total: data.total, mode: 'collection_search' });
+                } else {
+                    throw new Error("Search failed");
+                }
+            } catch (err) {
+                console.error(err);
+                loader.style.display = 'none';
+                errorMsg.style.display = 'block';
+            }
+        }
+
+        searchBtn.addEventListener('click', () => searchMovie());
+        document.getElementById('show-all-btn').addEventListener('click', () => fetchAllMovies(false));
+        document.getElementById('load-more-btn').addEventListener('click', () => fetchAllMovies(true));
+        
+        document.getElementById('open-collection-search').addEventListener('click', () => {
+            document.getElementById('collection-search-container').style.display = 'block';
+            document.getElementById('collection-actions').style.display = 'none';
+            document.getElementById('collection-search-input').focus();
+        });
+
+        document.getElementById('close-collection-search').addEventListener('click', () => {
+            document.getElementById('collection-search-container').style.display = 'none';
+            document.getElementById('collection-actions').style.display = 'block';
+            document.getElementById('collection-search-input').value = '';
+            fetchAllMovies(false);
+        });
+
+        document.getElementById('collection-search-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const query = e.target.value;
+                performCollectionSearch(query);
+            }
+        });
+
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchMovie();
+        });
+    </script>
+</body>
+</html>
