@@ -52,4 +52,3 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 4. **Caching**: Saves the processed dataframe and similarity matrix to `dataset/cache/` to avoid re-computation on every restart.
 
 ---
-Developed with ❤️ by [3bdelrahmanashraf](https://github.com/3bdelrahmanashraf)
